@@ -58,6 +58,16 @@ Runs the platform-independent curriculum/progress/storage/audio-synth test suite
 - **Test core logic:** runs native core tests on Ubuntu.
 - **Release (on tags `v*`):** attaches `wondersprout.exe` and `SHA256SUMS.txt` to the GitHub Release.
 
+## Embedded voice clips (Windows resources)
+
+WonderSprout can embed voice prompts directly in `wondersprout.exe` as Win32 `WAVE` resources (compiled with `windres`, played offline via `PlaySoundW`, with mute respect and Windows SAPI text-to-speech as fallback).
+
+- **Lines/assets:** `assets/voice/{welcome.wav,tap_seeds.wav,retry_look.wav}` → IDs `101/102/103` (see [voice_res.h](src/platform_win32/voice_res.h) and [voice.rc](src/platform_win32/voice.rc)).
+- **Current committed clips:** development **placeholder** WAVs (valid 24 kHz, 16-bit mono PCM, silent) so the resource pipeline builds/runs end-to-end anywhere.
+- **Ship voice:** generate the three lines with Kokoro **Heart (`af_heart`) @ 0.9×**, export as **24 kHz, 16-bit mono PCM WAV**, overwrite the files in `assets/voice/` (same filenames), and rebuild (`bash build/build_windows.sh`) — no code changes required. Kokoro model weights are Apache 2.0; see [assets/voice/README.md](assets/voice/README.md) for the replacement workflow and licensing note.
+
+Prompts are triggered at launch/lesson/round state transitions (not on window repaint) so repainting cannot restart playback.
+
 ## Project structure
 
 ```

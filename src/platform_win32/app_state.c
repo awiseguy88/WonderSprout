@@ -50,8 +50,10 @@ typedef struct {
 
 static Particle g_particles[MAX_PARTICLES];
 static int g_particleCount = 0;
+static int g_reduceMotion = 0;
 
 static void particle_spawn(float x, float y, COLORREF c) {
+    if (g_reduceMotion) return; /* respect Reduce Motion */
     if (g_particleCount >= MAX_PARTICLES) return;
     Particle *p = &g_particles[g_particleCount++];
     p->x = x; p->y = y;
@@ -923,6 +925,7 @@ static void render_music_song(AppState *app, HDC hdc) {
 
 /* ---------- activity renderer ---------- */
 void app_render(AppState *app, HDC hdc) {
+    g_reduceMotion = app->progress.reduceMotion;
     hits_clear(app);
     switch (app->screen) {
         case SCREEN_HOME: render_home(app, hdc); break;
@@ -1298,4 +1301,45 @@ int app_click(AppState *app, int x, int y) {
         default:
             return 0;
     }
+}
+
+
+int app_key(AppState *app, int vk) {
+    /* ESC = back/home */
+    if (vk == VK_ESCAPE) {
+        if (app->activeActIdx >= 0) { app->activeActIdx = -1; app->screen = SCREEN_HOME; return 1; }
+        if (app->screen != SCREEN_HOME) { app->screen = SCREEN_HOME; return 1; }
+        return 0;
+    }
+    /* Enter/Space = primary action */
+    if (vk == VK_RETURN || vk == VK_SPACE) {
+        if (app->screen == SCREEN_HOME) {
+            /* simulate Continue Adventure */
+            if (!app->progress.sessionActive) { progress_start_session(&app->progress); save(app); speak(app, L"Time to play three games! Let's go!"); }
+            int next = progress_next_path_step(&app->progress);
+            if (next >= 0 && progress_is_unlocked(&app->progress, next)) start_activity(app, next);
+            else { app->screen = SCREEN_PATH; }
+            return 1;
+        }
+        if (app->screen == SCREEN_ACTIVITY && app->actDone) {
+            if (progress_session_ready(&app->progress)) {
+                progress_finish_session(&app->progress); save(app);
+                app->activeActIdx = -1; app->screen = SCREEN_GARDEN;
+                speak(app, L"Your garden grew! Plant your seed!");
+            } else if (app->progress.sessionActive) {
+                int next = progress_next_path_step(&app->progress);
+                if (next >= 0 && progress_is_unlocked(&app->progress, next)) start_activity(app, next);
+                else { app->activeActIdx = -1; app->screen = SCREEN_HOME; }
+            } else {
+                app->activeActIdx = -1; app->screen = SCREEN_HOME;
+            }
+            return 1;
+        }
+    }
+    /* Path scroll with arrows/PageUp/PageDown */
+    if (app->screen == SCREEN_PATH) {
+        if (vk == VK_DOWN || vk == VK_NEXT) { app->pathScroll++; return 1; }
+        if (vk == VK_UP || vk == VK_PRIOR) { if (app->pathScroll > 0) app->pathScroll--; return 1; }
+    }
+    return 0;
 }

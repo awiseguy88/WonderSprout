@@ -11,9 +11,11 @@
 
 static HWAVEOUT g_hwo = NULL;
 static int g_available = 0;
-static volatile LONG g_playing = 0;
 
 static WAVEFORMATEX g_fmt;
+static WAVEHDR g_hdr;
+static short *g_pcm = NULL;
+static int g_prepared = 0;
 
 int audio_init(void) {
     if (g_available) return 0;
@@ -22,7 +24,7 @@ int audio_init(void) {
     g_fmt.nSamplesPerSec = SAMPLE_RATE;
     g_fmt.nAvgBytesPerSec = SAMPLE_RATE * CHANNELS * sizeof(short);
     g_fmt.nBlockAlign = CHANNELS * sizeof(short);
-    g_fmt.wBitsPerSample = 16 * CHANNELS;
+    g_fmt.wBitsPerSample = 16;
     g_fmt.cbSize = 0;
 
     MMRESULT mm = waveOutOpen(&g_hwo, WAVE_MAPPER, &g_fmt, 0, 0, CALLBACK_NULL);
@@ -35,9 +37,22 @@ int audio_init(void) {
     return 0;
 }
 
+static void audio_release_buffer(void) {
+    if (!g_hwo) return;
+    if (g_prepared) {
+        waveOutReset(g_hwo);
+        waveOutUnprepareHeader(g_hwo, &g_hdr, sizeof(WAVEHDR));
+        g_prepared = 0;
+    }
+    if (g_pcm) {
+        free(g_pcm);
+        g_pcm = NULL;
+    }
+}
+
 void audio_shutdown(void) {
     if (!g_available || !g_hwo) return;
-    waveOutReset(g_hwo);
+    audio_release_buffer();
     waveOutClose(g_hwo);
     g_hwo = NULL;
     g_available = 0;
@@ -53,38 +68,30 @@ static short float_to_pcm(float s) {
     return (short)(s * 32767.0f);
 }
 
+/* Non-blocking: reset/stop previous tone, write new one, return immediately.
+   This keeps music-pad taps responsive and avoids UI stalls. */
 void audio_play(const ToneBuffer *b) {
     if (!g_available || !g_hwo || !b || b->n <= 0 || !b->samples) return;
-    if (InterlockedExchange(&g_playing, 1)) return; /* one tone at a time */
 
-    /* Convert float [-1,1] to 16-bit PCM. */
-    short *pcm = (short *)malloc((size_t)b->n * sizeof(short));
-    if (!pcm) { InterlockedExchange(&g_playing, 0); return; }
-    for (int i = 0; i < b->n; i++) pcm[i] = float_to_pcm(b->samples[i]);
+    /* Stop and release previous buffer so we can reuse safely. */
+    audio_release_buffer();
 
-    WAVEHDR hdr;
-    ZeroMemory(&hdr, sizeof(hdr));
-    hdr.lpData = (LPSTR)pcm;
-    hdr.dwBufferLength = (DWORD)(b->n * sizeof(short));
-    hdr.dwFlags = 0;
+    g_pcm = (short *)malloc((size_t)b->n * sizeof(short));
+    if (!g_pcm) return;
+    for (int i = 0; i < b->n; i++) g_pcm[i] = float_to_pcm(b->samples[i]);
 
-    if (waveOutPrepareHeader(g_hwo, &hdr, sizeof(WAVEHDR)) == MMSYSERR_NOERROR) {
-        waveOutWrite(g_hwo, &hdr, sizeof(WAVEHDR));
-        /* Wait for playback to finish (bounded). Tones are < 1s. */
-        DWORD maxWait = (DWORD)((float)b->n / (float)SAMPLE_RATE * 1000.0f) + 150;
-        DWORD elapsed = 0;
-        while (elapsed < maxWait) {
-            MMTIME mmtime;
-            mmtime.wType = TIME_BYTES;
-            if (waveOutGetPosition(g_hwo, &mmtime, sizeof(mmtime)) == MMSYSERR_NOERROR) {
-                if (mmtime.u.cb >= hdr.dwBufferLength) break;
-            }
-            Sleep(10);
-            elapsed += 10;
-        }
-        waveOutUnprepareHeader(g_hwo, &hdr, sizeof(WAVEHDR));
+    ZeroMemory(&g_hdr, sizeof(g_hdr));
+    g_hdr.lpData = (LPSTR)g_pcm;
+    g_hdr.dwBufferLength = (DWORD)(b->n * sizeof(short));
+    g_hdr.dwFlags = 0;
+
+    if (waveOutPrepareHeader(g_hwo, &g_hdr, sizeof(WAVEHDR)) != MMSYSERR_NOERROR) {
+        free(g_pcm);
+        g_pcm = NULL;
+        return;
     }
-
-    free(pcm);
-    InterlockedExchange(&g_playing, 0);
+    g_prepared = 1;
+    if (waveOutWrite(g_hwo, &g_hdr, sizeof(WAVEHDR)) != MMSYSERR_NOERROR) {
+        audio_release_buffer();
+    }
 }

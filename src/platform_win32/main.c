@@ -45,6 +45,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
 
+    case WM_KEYDOWN: {
+        if (app_key(&g_app, (int)wParam)) {
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
     case WM_TIMER:
         /* Light periodic repaint for animations/status; kept cheap. */
         InvalidateRect(hwnd, NULL, FALSE);

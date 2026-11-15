@@ -96,6 +96,9 @@ int app_click(AppState *app, int x, int y);
 /* Draw the current screen into hdc. */
 void app_render(AppState *app, HDC hdc);
 
+/* Handle a key press (VK_*). Returns 1 if state changed. */
+int app_key(AppState *app, int vk);
+
 /* Helpers to get progress file path. */
 void app_get_save_path(char *buf, int bufLen);
 

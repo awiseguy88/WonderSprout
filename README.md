@@ -65,5 +65,5 @@ wondersprout/
 
 ## Notes
 
-- This project was developed in a Linux environment without a Windows cross-compiler installed in-session, so the `.exe` is produced by the included GitHub Actions workflow (or by running `build/build_windows.sh` on any machine with MinGW-w64). Core logic is verified by the Linux test suite (`11/11` tests passing).
+- `dist/wondersprout.exe` can be produced locally with MinGW-w64 (`build/build_windows.sh`) or via the included GitHub Actions workflow. Core logic is verified by the Linux test suite (`11/11` tests passing).
 - All content is original; no ABCmouse branding, characters, or media are used.

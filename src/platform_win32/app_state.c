@@ -501,19 +501,27 @@ static void render_find_letter(AppState *app, HDC hdc) {
         speak(app, spk);
         lastSpeakStep = app->actStep;
     }
-    int correctPos = app->actStep % 4;
-    wchar_t opts[4];
-    for (int i = 0; i < 4; i++) opts[i] = L'A' + (wchar_t)((app->actStep + i * 2) % 5);
-    opts[correctPos] = target;
+    /* 4 unique choices including target; equal styling (no answer hint) */
+    wchar_t opts[4]; int count = 0;
+    opts[count++] = target;
+    for (int d = 1; count < 4 && d < 5; d++) {
+        wchar_t cand = L'A' + (wchar_t)(((target - L'A') + d) % 5);
+        int found = 0;
+        for (int i = 0; i < count; i++) if (opts[i] == cand) { found = 1; break; }
+        if (!found) opts[count++] = cand;
+    }
+    int rot = app->actStep % 4;
+    wchar_t shuffled[4];
+    for (int i = 0; i < 4; i++) shuffled[i] = opts[(i + rot) % 4];
     int bw = 150, bh = 150, gap = 30, total = 4 * bw + 3 * gap;
     int startX = (app->width - total) / 2, y = 220;
     for (int i = 0; i < 4; i++) {
         RECT rc = {startX + i * (bw + gap), y, startX + i * (bw + gap) + bw, y + bh};
-        wchar_t lab[2] = {opts[i], 0};
-        int isCorrect = (i == correctPos);
-        COLORREF fill = isCorrect ? RGB(255, 255, 180) : RGB(255, 255, 255);
+        wchar_t lab[2] = {shuffled[i], 0};
+        int isCorrect = (shuffled[i] == target);
+        COLORREF fill = RGB(255, 255, 255);
         fill_rect(hdc, rc, fill);
-        HPEN pen = CreatePen(PS_SOLID, 3, isCorrect ? RGB(200, 160, 0) : RGB(120, 120, 120));
+        HPEN pen = CreatePen(PS_SOLID, 3, RGB(120, 120, 120));
         HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
         RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 20, 20);
         SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
@@ -529,36 +537,39 @@ static void render_number_show(AppState *app, HDC hdc, int n) {
     render_activity_header(app, hdc);
     wchar_t num[8]; swprintf(num, 8, L"%d", n);
     draw_text_center(hdc, (RECT){0, 80, app->width / 2, 220}, num, 140, RGB(160, 50, 50), 1);
-    /* speak number */
-    static int lastNum = -1;
-    if (n != lastNum) {
-        wchar_t spk[16]; swprintf(spk, 16, L"%d", n);
+    /* speak number once per activity entry */
+    static int lastNumIdx = -1;
+    if (app->activeActIdx != lastNumIdx) {
+        wchar_t spk[32]; swprintf(spk, 32, L"Tap %d objects to count to %d", n, n);
         speak(app, spk);
-        lastNum = n;
+        lastNumIdx = app->activeActIdx;
     }
-    /* draw n tap-able circles */
+    /* draw n tap-able circles; actStep is a bitmask of tapped objects */
     int maxPerRow = 5, rows = (n + maxPerRow - 1) / maxPerRow;
     int startY = 260, r = 28, gap = 16;
     int totalW = maxPerRow * (2 * r + gap) - gap;
     int startX = (app->width - totalW) / 2;
     for (int i = 0; i < n; i++) {
+        int tapped = (app->actStep & (1 << i)) != 0;
         int row = i / maxPerRow, col = i % maxPerRow;
         int cx = startX + col * (2 * r + gap) + r;
         int cy = startY + row * (2 * r + gap) + r;
         RECT rc = {cx - r, cy - r, cx + r, cy + r};
-        COLORREF c = app->progress.completed[activity_index_of(k_activities[app->activeActIdx].id)] ? RGB(200, 255, 200) : RGB(255, 140, 140);
+        COLORREF c = tapped ? RGB(120, 220, 120) : RGB(255, 140, 140);
         fill_rect(hdc, rc, c);
-        HPEN pen = CreatePen(PS_SOLID, 3, RGB(120, 40, 40));
+        HPEN pen = CreatePen(PS_SOLID, 3, tapped ? RGB(40, 120, 40) : RGB(120, 40, 40));
         HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
         Ellipse(hdc, rc.left, rc.top, rc.right, rc.bottom);
         SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
         wchar_t d[4]; swprintf(d, 4, L"%d", i + 1);
         draw_text_center(hdc, rc, d, 22, RGB(255, 255, 255), 1);
-        /* label not needed for hit, pass NULL-safe placeholder */
         hit_add(app, rc, BTN_ACTIVITY_ACTION, L"", i + 1, 1);
     }
+    int tappedCount = 0;
+    for (int i = 0; i < n; i++) if (app->actStep & (1 << i)) tappedCount++;
+    wchar_t prompt[64]; swprintf(prompt, 64, L"Tap each object: %d of %d", tappedCount, n);
     draw_text_center(hdc, (RECT){0, startY + rows * (2 * r + gap) + 20, app->width, startY + rows * (2 * r + gap) + 60},
-                     L"Tap each object to count!", 20, RGB(80, 80, 80), 0);
+                     prompt, 20, RGB(80, 80, 80), 0);
     if (app->actDone) render_activity_done(app, hdc);
 }
 
@@ -583,14 +594,33 @@ static void render_count_quiz(AppState *app, HDC hdc) {
         Ellipse(hdc, cx - 24, cy - 24, cx + 24, cy + 24);
         SelectObject(hdc, ob); DeleteObject(br);
     }
-    int opts[4] = {target - 1, target, target + 1, target + 2};
-    for (int i = 0; i < 4; i++) if (opts[i] < 1) opts[i] = target + i + 1;
-    opts[app->actStep % 4] = target;
+    /* generate 4 unique options including target exactly once */
+    int opts[4]; int count = 0;
+    opts[count++] = target;
+    int delta = 1;
+    while (count < 4) {
+        int up = target + delta;
+        int down = target - delta;
+        if (down >= 1 && count < 4) {
+            int found = 0;
+            for (int i = 0; i < count; i++) if (opts[i] == down) { found = 1; break; }
+            if (!found) opts[count++] = down;
+        }
+        if (up <= 10 && count < 4) {
+            int found = 0;
+            for (int i = 0; i < count; i++) if (opts[i] == up) { found = 1; break; }
+            if (!found) opts[count++] = up;
+        }
+        delta++;
+    }
+    /* shuffle positions deterministically but not trivially */
+    int rot = app->actStep % 4;
+    int shuffled[4];
+    for (int i = 0; i < 4; i++) shuffled[i] = opts[(i + rot) % 4];
     int bw = 110, bh = 100, gap = 28, total = 4 * bw + 3 * gap, sx = (app->width - total) / 2, y = 300;
     for (int i = 0; i < 4; i++) {
-        wchar_t lab[4]; swprintf(lab, 4, L"%d", opts[i]);
-        int isCorrect = (opts[i] == target);
-        COLORREF fill = isCorrect ? RGB(255, 255, 180) : RGB(255, 255, 210);
+        wchar_t lab[4]; swprintf(lab, 4, L"%d", shuffled[i]);
+        COLORREF fill = RGB(255, 255, 210);
         RECT rc = {sx + i * (bw + gap), y, sx + i * (bw + gap) + bw, y + bh};
         fill_rect(hdc, rc, fill);
         HPEN pen = CreatePen(PS_SOLID, 3, RGB(80, 80, 80));
@@ -598,7 +628,7 @@ static void render_count_quiz(AppState *app, HDC hdc) {
         RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 16, 16);
         SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
         draw_text_center(hdc, rc, lab, 32, RGB(30, 30, 30), 1);
-        hit_add(app, rc, BTN_ACTIVITY_ACTION, lab, opts[i], 1);
+        hit_add(app, rc, BTN_ACTIVITY_ACTION, lab, shuffled[i], 1);
     }
     if (app->actDone) render_activity_done(app, hdc);
 }
@@ -680,7 +710,7 @@ void app_render(AppState *app, HDC hdc) {
                 const char *id = k_activities[app->activeActIdx].id;
                 if (strcmp(id, "LT_A") == 0 || strcmp(id, "LT_B") == 0 || strcmp(id, "LT_C") == 0 ||
                     strcmp(id, "LT_D") == 0 || strcmp(id, "LT_E") == 0) {
-                    int li = id[2] - '1';
+                    int li = (int)(id[3] - 'A');
                     render_letter_gallery(app, hdc, li >= 0 && li < 5 ? li : 0);
                 } else if (strcmp(id, "LT_FIND") == 0 || strcmp(id, "LT_TRACE") == 0) {
                     render_find_letter(app, hdc);
@@ -734,12 +764,30 @@ static void handle_activity_action(AppState *app, int param) {
     if (app->activeActIdx < 0) return;
     const char *id = k_activities[app->activeActIdx].id;
 
+    /* Letter galleries: tapping "I know it!" completes */
     if (strcmp(id, "LT_A") == 0 || strcmp(id, "LT_B") == 0 || strcmp(id, "LT_C") == 0 ||
-        strcmp(id, "LT_D") == 0 || strcmp(id, "LT_E") == 0 ||
-        strcmp(id, "NM_1") == 0 || strcmp(id, "NM_2") == 0 || strcmp(id, "NM_3") == 0 ||
-        strcmp(id, "NM_4") == 0 || strcmp(id, "NM_5") == 0) {
+        strcmp(id, "LT_D") == 0 || strcmp(id, "LT_E") == 0) {
         app->actScore = 3;
         finish_activity(app);
+        return;
+    }
+
+    /* Number intros: require all N objects tapped (param = 1..n, bitmask in actStep) */
+    if (strcmp(id, "NM_1") == 0 || strcmp(id, "NM_2") == 0 || strcmp(id, "NM_3") == 0 ||
+        strcmp(id, "NM_4") == 0 || strcmp(id, "NM_5") == 0) {
+        int n = id[3] - '0';
+        if (param >= 1 && param <= n) {
+            int bit = 1 << (param - 1);
+            if (!(app->actStep & bit)) {
+                app->actStep |= bit;
+                wchar_t spk[16]; swprintf(spk, 16, L"%d", param);
+                speak(app, spk);
+                int tapped = 0;
+                for (int i = 0; i < n; i++) if (app->actStep & (1 << i)) tapped++;
+                if (tapped >= n) { app->actScore = 3; finish_activity(app); }
+                else set_status(app, L"Keep tapping!");
+            }
+        }
         return;
     }
 
@@ -751,7 +799,7 @@ static void handle_activity_action(AppState *app, int param) {
             else set_status(app, L"Nice! Find the next one.");
         } else {
             play_feedback(app, 0);
-            set_status(app, L"Try again!");
+            set_status(app, L"Try again! Look for the letter.");
         }
         return;
     }
@@ -763,10 +811,10 @@ static void handle_activity_action(AppState *app, int param) {
             app->actStep++;
             play_tone(app, 720.0f, 0.1f);
             if (app->actStep >= 3) { app->actScore = 3; finish_activity(app); }
-            else set_status(app, L"Correct!");
+            else set_status(app, L"Correct! Great counting!");
         } else {
             play_feedback(app, 0);
-            set_status(app, L"Count again!");
+            set_status(app, L"Count again: how many circles?");
         }
         return;
     }

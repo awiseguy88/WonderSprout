@@ -1,0 +1,16 @@
+# Build outputs
+dist/
+build/test_core
+*.exe
+*.o
+*.obj
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local progress files from testing
+wondersprout_progress.dat
+progress.dat

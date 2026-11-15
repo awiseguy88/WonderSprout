@@ -3,13 +3,15 @@
 These WAV files are embedded into `wondersprout.exe` as Win32 `WAVE` resources and played offline via `PlaySoundW` (with mute respect and SAPI fallback).
 
 ## Current state (as embedded)
-| File | Status |
-|------|--------|
-| `welcome.wav` (101) | **Real Kokoro Heart (`af_heart`) sample** — natural woman's voice (24 kHz 16-bit mono PCM). This is an official Heart sample clip; replace with a Heart 0.9× export of *"Hi, I’m Sprout. Want to play?"* for the exact line. |
-| `tap_seeds.wav` (102) | **Audible synthesized placeholder** (speech-like, not Kokoro). Replace with a Heart 0.9× export of *"Tap each seed. We’ll count together."* |
-| `retry_look.wav` (103) | **Audible synthesized placeholder** (speech-like, not Kokoro). Replace with a Heart 0.9× export of *"Let’s look again. Can you find the circle?"* |
+All three clips are **real Kokoro Heart (`af_heart`) natural woman's voice** samples (24 kHz, 16-bit mono PCM WAV), embedded in `wondersprout.exe` (no network at runtime).
 
-All clips are valid 24 kHz, 16-bit mono PCM WAV and embedded in `wondersprout.exe` (no network at runtime).
+| File | Resource ID | Intended line | Current content |
+|------|-------------|---------------|-----------------|
+| `welcome.wav` | 101 | *"Hi, I’m Sprout. Want to play?"* | Heart sample (5.0 s) |
+| `tap_seeds.wav` | 102 | *"Tap each seed. We’ll count together."* | Heart sample (10.8 s) |
+| `retry_look.wav` | 103 | *"Let’s look again. Can you find the circle?"* | Heart sample (10.3 s) |
+
+**To ship the exact lines:** generate the three lines with Kokoro **Heart (`af_heart`) @ 0.9×**, export as **24 kHz, 16-bit mono PCM WAV**, overwrite the files in this folder (same filenames), and rebuild (`bash build/build_windows.sh`) — no code changes required. The current embedded clips are official Heart samples (Apache 2.0 licensed) that confirm the woman's voice is present; they can be replaced with the exact lines above. See [assets/voice/README.md](assets/voice/README.md) for the full replacement workflow and licensing note.
 
 ## Target voice (recommended)
 - **Voice:** Kokoro **Heart** (`af_heart`, American English female, rated A)

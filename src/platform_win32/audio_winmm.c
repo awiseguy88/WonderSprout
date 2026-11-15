@@ -2,7 +2,9 @@
 #include <mmsystem.h>
 #include <math.h>
 
+#ifdef _MSC_VER
 #pragma comment(lib, "winmm.lib")
+#endif
 
 #define SAMPLE_RATE 44100
 #define CHANNELS 1
@@ -75,7 +77,7 @@ void audio_play(const ToneBuffer *b) {
             MMTIME mmtime;
             mmtime.wType = TIME_BYTES;
             if (waveOutGetPosition(g_hwo, &mmtime, sizeof(mmtime)) == MMSYSERR_NOERROR) {
-                if (mmtime.u.cbOffset >= hdr.dwBufferLength) break;
+                if (mmtime.u.cb >= hdr.dwBufferLength) break;
             }
             Sleep(10);
             elapsed += 10;

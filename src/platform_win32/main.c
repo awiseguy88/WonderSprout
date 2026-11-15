@@ -1,6 +1,10 @@
 #define WIN32_LEAN_AND_MEAN
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
 #include <windows.h>
 #include <tchar.h>
 #include <stdlib.h>
@@ -8,8 +12,10 @@
 
 #include "app_state.h"
 
+#ifdef _MSC_VER
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
+#endif
 
 static AppState g_app;
 
@@ -74,7 +80,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
 }
 
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
+int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPWSTR lpCmd, int nShow) {
     (void)hPrev; (void)lpCmd;
 
     /* DPI awareness for crisp rendering. */

@@ -1,5 +1,8 @@
 name: Build & Test WonderSprout
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ master, main ]

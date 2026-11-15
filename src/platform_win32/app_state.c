@@ -138,6 +138,21 @@ static void speak(AppState *app, const wchar_t *text) {
     }
 }
 
+/* Play an embedded WAVE resource clip (repaint-safe).
+   Tries PlaySoundW resource; falls back to speak(fallback) if playback fails.
+   Returns 1 if the resource clip played (or was attempted successfully),
+   0 if it fell back to SAPI. */
+static int play_voice_clip(AppState *app, UINT resId, const wchar_t *fallbackText) {
+    if (app->progress.muted) return 0;
+    if (PlaySoundW(MAKEINTRESOURCEW(resId), GetModuleHandleW(NULL),
+                   SND_RESOURCE | SND_ASYNC | SND_NODEFAULT)) {
+        return 1; /* clip started successfully */
+    }
+    /* resource failed: fall back to SAPI */
+    speak(app, fallbackText);
+    return 0;
+}
+
 static void play_feedback(AppState *app, int good) {
     if (app->progress.muted) return;
     ToneBuffer b = good ? synth_star(44100) : synth_error(44100);
@@ -243,6 +258,8 @@ static void start_activity(AppState *app, int actIdx) {
     app->actStep = 0;
     app->screen = SCREEN_ACTIVITY;
     set_status(app, L"Let's play!");
+    /* Reset per-activity prompt flags so clips fire once per activity/round. */
+    app->voiceFlags = 0;
 }
 
 static void finish_activity(AppState *app) {
@@ -636,11 +653,16 @@ static void render_number_show(AppState *app, HDC hdc, int n) {
     render_activity_header(app, hdc);
     wchar_t num[8]; swprintf(num, 8, L"%d", n);
     draw_text_center(hdc, (RECT){0, 80, app->width / 2, 220}, num, 140, RGB(160, 50, 50), 1);
-    /* speak number once per activity entry */
+    /* speak number once per activity entry (prefer embedded count clip) */
     static int lastNumIdx = -1;
     if (app->activeActIdx != lastNumIdx) {
         wchar_t spk[32]; swprintf(spk, 32, L"Tap %d objects to count to %d", n, n);
-        speak(app, spk);
+        if (!(app->voiceFlags & 1u << 0)) {
+            play_voice_clip(app, VOICE_RES_COUNT, spk);
+            app->voiceFlags |= 1u << 0;
+        } else {
+            speak(app, spk);
+        }
         lastNumIdx = app->activeActIdx;
     }
     /* draw n tap-able circles; actStep is a bitmask of tapped objects */
@@ -681,7 +703,12 @@ static void render_count_quiz(AppState *app, HDC hdc) {
     static int lastQuizTarget = -1;
     if (target != lastQuizTarget) {
         wchar_t spk[32]; swprintf(spk, 32, L"How many circles?");
-        speak(app, spk);
+        if (!(app->voiceFlags & 1u << 1)) {
+            play_voice_clip(app, VOICE_RES_COUNT, spk);
+            app->voiceFlags |= 1u << 1;
+        } else {
+            speak(app, spk);
+        }
         lastQuizTarget = target;
     }
     /* draw target circles */

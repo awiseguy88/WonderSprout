@@ -82,6 +82,9 @@ typedef struct {
     HitRect hits[MAX_HITS];
     int hitCount;
 
+    /* Voice clip prompt state (repaint-safe, reset on activity start). */
+    unsigned int voiceFlags;
+
     /* window */
     int width, height;
 } AppState;

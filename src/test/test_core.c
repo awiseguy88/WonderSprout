@@ -136,6 +136,20 @@ static int test_storage_roundtrip(void) {
     ASSERT(q.stars[a] == p.stars[a]);
     ASSERT(q.completed[a] == 1);
 
+    /* Save twice to the same path: the second save must replace the first.
+       This is the regression case that fails with CRT rename() on Windows
+       when the destination already exists. */
+    int b = activity_index_of(k_learningPath[1]);
+    progress_complete(&p, b, 3);
+    p.muted = 0;
+    ASSERT(storage_save(path, &p) == 0);
+    Progress q2; progress_init(&q2);
+    ASSERT(storage_load(path, &q2) == 0);
+    ASSERT(q2.pathIndex == p.pathIndex);
+    ASSERT(q2.muted == 0);
+    ASSERT(q2.stars[b] == 3);
+    ASSERT(q2.completed[b] == 1);
+
     /* corrupt -> defaults */
     FILE *f = fopen(path, "wb");
     ASSERT(f != NULL);
@@ -146,6 +160,25 @@ static int test_storage_roundtrip(void) {
     r = storage_load(path, &bad);
     ASSERT(r == -1);
     ASSERT(bad.pathIndex == 0); /* defaults */
+    remove(path);
+    return 1;
+}
+
+static int test_storage_reset_persists(void) {
+    const char *path = "/tmp/wondersprout_test_reset.dat";
+    Progress p; progress_init(&p);
+    int a = activity_index_of(k_learningPath[0]);
+    progress_complete(&p, a, 3);
+    ASSERT(storage_save(path, &p) == 0);
+
+    /* Reset must persist: saving defaults over an existing file. */
+    ASSERT(storage_reset(path) == 0);
+    Progress q; progress_init(&q);
+    q.pathIndex = 99;
+    ASSERT(storage_load(path, &q) == 0);
+    ASSERT(q.pathIndex == 0);
+    ASSERT(q.completed[a] == 0);
+    ASSERT(progress_star_total(&q) == 0);
     remove(path);
     return 1;
 }
@@ -207,6 +240,7 @@ int main(void) {
     TEST(progress_path_complete);
     TEST(storage_roundtrip);
     TEST(storage_missing);
+    TEST(storage_reset_persists);
     TEST(audio_synth);
 
     printf("\n%d/%d tests passed\n", tests_run - tests_failed, tests_run);

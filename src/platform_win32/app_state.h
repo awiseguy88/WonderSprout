@@ -66,6 +66,7 @@ typedef struct {
 
     /* transient UI */
     int showResetConfirm;
+    int saveError;            /* 1 if the last save failed to persist */
     wchar_t statusMsg[128];
 
     /* hit regions for the current frame */

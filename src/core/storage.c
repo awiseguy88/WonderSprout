@@ -3,9 +3,44 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define STORAGE_MAGIC "WSV1"
 
 static const char *k_temp_suffix = ".tmp";
+
+/* Atomically replace path with tmp. On Windows uses MoveFileExW with
+   MOVEFILE_REPLACE_EXISTING so an existing destination is always replaced
+   (CRT rename() rejects an existing destination). Falls back to deleting the
+   destination first, then moving. Returns 0 on success, -1 on failure. */
+static int replace_file(const char *tmp, const char *path) {
+#ifdef _WIN32
+    /* Convert narrow paths to wide for the W API. */
+    int wtmp = MultiByteToWideChar(CP_UTF8, 0, tmp, -1, NULL, 0);
+    int wpath = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+    if (wtmp <= 0 || wtmp > MAX_PATH || wpath <= 0 || wpath > MAX_PATH) {
+        return -1;
+    }
+    wchar_t wt[MAX_PATH], wp[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, tmp, -1, wt, wtmp);
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, wpath);
+
+    if (MoveFileExW(wt, wp, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        return 0;
+    }
+    /* Fallback: remove destination, then move. */
+    DeleteFileW(wp);
+    if (MoveFileExW(wt, wp, MOVEFILE_WRITE_THROUGH)) {
+        return 0;
+    }
+    return -1;
+#else
+    if (rename(tmp, path) != 0) return -1;
+    return 0;
+#endif
+}
 
 int storage_load(const char *path, Progress *out) {
     if (!path || !out) return -1;
@@ -69,7 +104,7 @@ int storage_save(const char *path, const Progress *p) {
     }
 
     if (fclose(f) != 0) ok = -1;
-    if (ok == 0 && rename(tmp, path) != 0) ok = -1;
+    if (ok == 0 && replace_file(tmp, path) != 0) ok = -1;
     if (ok != 0) remove(tmp);
     return ok;
 }

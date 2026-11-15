@@ -165,7 +165,11 @@ static void award_stickers(AppState *app) {
 }
 
 static void save(AppState *app) {
-    storage_save(app->savePath, &app->progress);
+    if (storage_save(app->savePath, &app->progress) == 0) {
+        app->saveError = 0;
+    } else {
+        app->saveError = 1;
+    }
 }
 
 /* ---------- hit rects ---------- */
@@ -427,6 +431,12 @@ static void render_settings(AppState *app, HDC hdc) {
         draw_text_wrap(hdc, (RECT){490, 230, 770, 290}, L"Reset all stars and progress?", 22, RGB(30, 30, 30));
         draw_button(app, hdc, (RECT){500, 300, 610, 350}, BTN_CONFIRM_YES, L"Yes", 0, RGB(255, 180, 180), 1);
         draw_button(app, hdc, (RECT){630, 300, 740, 350}, BTN_CONFIRM_NO, L"No", 0, RGB(200, 255, 200), 1);
+    }
+
+    if (app->saveError) {
+        draw_text_wrap(hdc, (RECT){80, 350, 440, 390},
+            L"Progress save failed. Progress may be lost on close.",
+            16, RGB(180, 60, 60));
     }
 
     draw_text_wrap(hdc, (RECT){80, 390, app->width - 80, app->height - 20},
@@ -820,11 +830,18 @@ int app_click(AppState *app, int x, int y) {
             return 1;
 
         case BTN_CONFIRM_YES:
-            storage_reset(app->savePath);
-            storage_load(app->savePath, &app->progress);
-            app->showResetConfirm = 0;
-            set_status(app, L"Progress reset.");
-            speak(app, L"Progress reset.");
+            if (storage_reset(app->savePath) == 0) {
+                storage_load(app->savePath, &app->progress);
+                app->showResetConfirm = 0;
+                app->saveError = 0;
+                set_status(app, L"Progress reset.");
+                speak(app, L"Progress reset.");
+            } else {
+                app->showResetConfirm = 0;
+                app->saveError = 1;
+                set_status(app, L"Reset failed — progress may not be saved.");
+                speak(app, L"Reset failed.");
+            }
             return 1;
 
         case BTN_CONFIRM_NO:

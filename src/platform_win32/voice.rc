@@ -1,0 +1,8 @@
+#include "voice_res.h"
+
+/* Embedded Kokoro/placeholder voice clips (24 kHz, 16-bit mono PCM WAV).
+   Run windres from the repo root so these paths resolve correctly. */
+
+VOICE_RES_WELCOME WAVE "assets/voice/welcome.wav"
+VOICE_RES_COUNT   WAVE "assets/voice/tap_seeds.wav"
+VOICE_RES_RETRY   WAVE "assets/voice/retry_look.wav"

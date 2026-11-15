@@ -2,8 +2,14 @@
 
 These WAV files are embedded into `wondersprout.exe` as Win32 `WAVE` resources and played offline via `PlaySoundW` (with mute respect and SAPI fallback).
 
-## Current state: development placeholders
-The committed `.wav` files are **valid silent placeholders** (24 kHz, 16-bit mono PCM) so the resource pipeline builds and runs end-to-end in any environment. Replace them with real voice exports to ship Sprout's voice.
+## Current state (as embedded)
+| File | Status |
+|------|--------|
+| `welcome.wav` (101) | **Real Kokoro Heart (`af_heart`) sample** — natural woman's voice (24 kHz 16-bit mono PCM). This is an official Heart sample clip; replace with a Heart 0.9× export of *"Hi, I’m Sprout. Want to play?"* for the exact line. |
+| `tap_seeds.wav` (102) | **Audible synthesized placeholder** (speech-like, not Kokoro). Replace with a Heart 0.9× export of *"Tap each seed. We’ll count together."* |
+| `retry_look.wav` (103) | **Audible synthesized placeholder** (speech-like, not Kokoro). Replace with a Heart 0.9× export of *"Let’s look again. Can you find the circle?"* |
+
+All clips are valid 24 kHz, 16-bit mono PCM WAV and embedded in `wondersprout.exe` (no network at runtime).
 
 ## Target voice (recommended)
 - **Voice:** Kokoro **Heart** (`af_heart`, American English female, rated A)

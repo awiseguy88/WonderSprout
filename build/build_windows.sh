@@ -35,8 +35,14 @@ LDFLAGS=(
   -luser32 -lgdi32 -lwinmm -lshell32 -lole32 -luuid -lkernel32 -lsapi -lm
 )
 
+echo "==> Compiling embedded voice resources with $WINDRES"
+(
+  cd "$ROOT"
+  "$WINDRES" --include-dir=src/platform_win32 -O coff src/platform_win32/voice.rc "$OUT_DIR/voice.o"
+)
+
 echo "==> Building WonderSprout (Windows x64) with $CC"
-"$CC" "${CFLAGS[@]}" -o "$OUT_DIR/wondersprout.exe" "${SRC_CORE[@]}" "${SRC_WIN[@]}" "${LDFLAGS[@]}"
+"$CC" "${CFLAGS[@]}" -o "$OUT_DIR/wondersprout.exe" "${SRC_CORE[@]}" "${SRC_WIN[@]}" "$OUT_DIR/voice.o" "${LDFLAGS[@]}"
 
 echo "==> Output: $OUT_DIR/wondersprout.exe"
 if command -v file >/dev/null 2>&1; then

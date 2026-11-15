@@ -8,7 +8,7 @@ static const Activity letters[] = {
     {{"LT_D"}, DOMAIN_LETTERS, 1, "Letter D", "D — duh, dog"},
     {{"LT_E"}, DOMAIN_LETTERS, 1, "Letter E", "E — eh, elephant"},
     {{"LT_FIND"}, DOMAIN_LETTERS, 3, "Find the Letter", "Tap the shown letter"},
-    {{"LT_TRACE"}, DOMAIN_LETTERS, 4, "Trace a Letter", "Follow the guide"},
+    {{"LT_TRACE"}, DOMAIN_LETTERS, 4, "Trace a Letter", "Tap the dots along the letter"},
 };
 
 static const Activity numbers[] = {
@@ -23,14 +23,14 @@ static const Activity numbers[] = {
 
 static const Activity shapes[] = {
     {{"SC_SHAPE"}, DOMAIN_SHAPES_COLORS, 2, "Shape Match", "Match the shape"},
-    {{"SC_COLOR"}, DOMAIN_SHAPES_COLORS, 2, "Color Match", "Match the color"},
-    {{"SC_SORT"}, DOMAIN_SHAPES_COLORS, 4, "Sort Shapes & Colors", "Put them in the right bin"},
+    {{"SC_COLOR"}, DOMAIN_SHAPES_COLORS, 2, "Color Match", "Tap the matching color circle"},
+    {{"SC_SORT"}, DOMAIN_SHAPES_COLORS, 4, "Sort Shapes", "Tap all circles or all squares"},
 };
 
 static const Activity music[] = {
     {{"MU_PADS"}, DOMAIN_MUSIC, 1, "Note Pads", "Tap to play notes"},
-    {{"MU_SONG1"}, DOMAIN_MUSIC, 3, "Song: Twinkle", "Play along"},
-    {{"MU_SONG2"}, DOMAIN_MUSIC, 3, "Song: Scale", "Up and down"},
+    {{"MU_SONG1"}, DOMAIN_MUSIC, 3, "Song: Twinkle", "Repeat the melody pads"},
+    {{"MU_SONG2"}, DOMAIN_MUSIC, 3, "Song: Scale", "Repeat the scale pads"},
 };
 
 const Activity k_activities[ACTIVITY_COUNT] = {

@@ -33,6 +33,10 @@
 /* Forward declarations for static helpers */
 static void render_activity_header(AppState *app, HDC hdc);
 static void render_activity_done(AppState *app, HDC hdc);
+static void render_trace_letter(AppState *app, HDC hdc);
+static void render_color_match(AppState *app, HDC hdc);
+static void render_sort_shapes(AppState *app, HDC hdc);
+static void render_music_song(AppState *app, HDC hdc);
 
 #define PART_MAX 16
 
@@ -778,6 +782,145 @@ static void render_music_pads(AppState *app, HDC hdc) {
     if (app->actDone) render_activity_done(app, hdc);
 }
 
+
+/* ---------- trace letter (tap dots along path) ---------- */
+static void render_trace_letter(AppState *app, HDC hdc) {
+    fill_rect(hdc, (RECT){0, 0, app->width, app->height}, BGC_LETTERS);
+    render_activity_header(app, hdc);
+    wchar_t letters[5] = {L'A', L'B', L'C', L'D', L'E'};
+    wchar_t target = letters[app->actStep % 5];
+    wchar_t prompt[64]; swprintf(prompt, 64, L"Tap the dots to trace: %lc", target);
+    draw_text_center(hdc, (RECT){0, 90, app->width, 130}, prompt, 28, RGB(30,30,30), 1);
+    draw_text_center(hdc, (RECT){0, 130, app->width, 160}, target == 'A' ? L"A - Apple" : target == 'B' ? L"B - Ball" : target == 'C' ? L"C - Cat" : target == 'D' ? L"D - Dog" : L"E - Elephant", 22, RGB(80,80,80), 0);
+
+    /* 6 dots in a simple path (vertical line + curve approximation) */
+    int cx = app->width / 2, cy = 280;
+    int dots = 6;
+    for (int i = 0; i < dots; i++) {
+        int tapped = (app->actScore & (1 << i)) != 0; /* reuse actScore as bitmask for dots */
+        int dx = cx + (i - dots/2) * 20;
+        int dy = cy - 60 + i * 25;
+        RECT rc = {dx - 18, dy - 18, dx + 18, dy + 18};
+        COLORREF c = tapped ? RGB(100, 220, 100) : RGB(200, 210, 240);
+        fill_rect(hdc, rc, c);
+        HPEN pen = CreatePen(PS_SOLID, 3, tapped ? RGB(40,140,40) : RGB(100,120,160));
+        HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Ellipse(hdc, rc.left, rc.top, rc.right, rc.bottom);
+        SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
+        wchar_t n[4]; swprintf(n, 4, L"%d", i + 1);
+        draw_text_center(hdc, rc, n, 16, RGB(30,30,30), 0);
+        hit_add(app, rc, BTN_ACTIVITY_ACTION, L"", i + 1, 1);
+    }
+    if (app->actDone) render_activity_done(app, hdc);
+}
+
+/* ---------- color match ---------- */
+static void render_color_match(AppState *app, HDC hdc) {
+    fill_rect(hdc, (RECT){0, 0, app->width, app->height}, BGC_SHAPES);
+    render_activity_header(app, hdc);
+    const wchar_t *colorNames[4] = {L"Red", L"Blue", L"Green", L"Yellow"};
+    COLORREF colors[4] = {RGB(220,60,60), RGB(60,100,220), RGB(60,160,60), RGB(230,200,40)};
+    int target = app->actStep % 4;
+    wchar_t prompt[64]; swprintf(prompt, 64, L"Tap the %ls circle", colorNames[target]);
+    draw_text_center(hdc, (RECT){0, 90, app->width, 130}, prompt, 30, RGB(30,30,30), 1);
+    static int lastColor = -1;
+    if (target != lastColor) { speak(app, prompt); lastColor = target; }
+
+    int rot = app->actStep % 4;
+    int order[4];
+    for (int i = 0; i < 4; i++) order[i] = (i + rot) % 4;
+    int bw = 140, bh = 140, gap = 30, totalW = 4*bw + 3*gap;
+    int sx = (app->width - totalW) / 2, y = 220;
+    for (int i = 0; i < 4; i++) {
+        int ci = order[i];
+        RECT rc = {sx + i*(bw+gap), y, sx + i*(bw+gap) + bw, y + bh};
+        HBRUSH br = CreateSolidBrush(colors[ci]);
+        HGDIOBJ ob = SelectObject(hdc, br);
+        HPEN pen = CreatePen(PS_SOLID, 3, RGB(60,60,60));
+        HGDIOBJ op = SelectObject(hdc, pen);
+        Ellipse(hdc, rc.left + 10, rc.top + 10, rc.right - 10, rc.bottom - 10);
+        SelectObject(hdc, op); SelectObject(hdc, ob);
+        DeleteObject(pen); DeleteObject(br);
+        hit_add(app, rc, BTN_ACTIVITY_ACTION, L"", (ci == target) ? 1 : 0, 1);
+    }
+    if (app->actDone) render_activity_done(app, hdc);
+}
+
+/* ---------- sort shapes ---------- */
+static void render_sort_shapes(AppState *app, HDC hdc) {
+    fill_rect(hdc, (RECT){0, 0, app->width, app->height}, BGC_SHAPES);
+    render_activity_header(app, hdc);
+    /* Ask to tap all circles (step 0,2) or all squares (step 1) */
+    int wantCircle = (app->actStep % 2 == 0);
+    const wchar_t *prompt = wantCircle ? L"Tap all the circles!" : L"Tap all the squares!";
+    draw_text_center(hdc, (RECT){0, 90, app->width, 130}, prompt, 28, RGB(30,30,30), 1);
+    static int lastSort = -1;
+    if (app->actStep != lastSort) { speak(app, prompt); lastSort = app->actStep; }
+
+    /* 6 items: 3 circles, 3 squares in fixed positions */
+    int isCircle[6] = {1, 0, 1, 0, 1, 0};
+    int positions[6][2] = {{150,220},{350,220},{550,220},{150,360},{350,360},{550,360}};
+    for (int i = 0; i < 6; i++) {
+        int tapped = (app->actScore & (1 << i)) != 0;
+        int cx = positions[i][0] * app->width / 700;
+        int cy = positions[i][1];
+        RECT rc = {cx - 40, cy - 40, cx + 40, cy + 40};
+        COLORREF fill = tapped ? RGB(180,240,180) : RGB(240,240,255);
+        fill_rect(hdc, rc, fill);
+        HPEN pen = CreatePen(PS_SOLID, 3, RGB(60,60,60));
+        HBRUSH br = CreateSolidBrush(isCircle[i] ? RGB(100,180,255) : RGB(255,180,100));
+        HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, br);
+        if (isCircle[i]) Ellipse(hdc, rc.left+8, rc.top+8, rc.right-8, rc.bottom-8);
+        else Rectangle(hdc, rc.left+12, rc.top+12, rc.right-12, rc.bottom-12);
+        SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen); DeleteObject(br);
+        int correct = (wantCircle && isCircle[i]) || (!wantCircle && !isCircle[i]);
+        hit_add(app, rc, BTN_ACTIVITY_ACTION, L"", correct ? (i+1) : -(i+1), 1);
+    }
+    if (app->actDone) render_activity_done(app, hdc);
+}
+
+/* ---------- music song (repeat melody) ---------- */
+static void render_music_song(AppState *app, HDC hdc) {
+    fill_rect(hdc, (RECT){0, 0, app->width, app->height}, BGC_MUSIC);
+    render_activity_header(app, hdc);
+
+    const char *id = k_activities[app->activeActIdx].id;
+    /* Song 1: C E G C (0,2,4,7 pads), Song 2: C D E F G (0,1,2,3,4) */
+    int seq1[4] = {0,2,4,7};
+    int seq2[5] = {0,1,2,3,4};
+    int *seq = (strcmp(id, "MU_SONG2") == 0) ? seq2 : seq1;
+    int seqLen = (strcmp(id, "MU_SONG2") == 0) ? 5 : 4;
+
+    /* actStep tracks how many notes correctly repeated so far */
+    int progress = app->actStep;
+    if (progress > seqLen) progress = seqLen;
+
+    wchar_t prompt[128];
+    if (progress < seqLen) {
+        swprintf(prompt, 128, L"Tap the glowing pad! (%d of %d)", progress, seqLen);
+    } else {
+        swprintf(prompt, 128, L"Song complete!");
+    }
+    draw_text_center(hdc, (RECT){0, 80, app->width, 116}, prompt, 22, RGB(60,60,60), 0);
+
+    int nextPad = (progress < seqLen) ? seq[progress] : -1;
+    int bw = 96, bh = 150, gap = 14, total = 8*bw + 7*gap, sx = (app->width - total)/2, y = 160;
+    for (int i = 0; i < 8; i++) {
+        RECT rc = {sx + i*(bw+gap), y, sx + i*(bw+gap) + bw, y + bh};
+        COLORREF fill = k_note_colors[i];
+        if (i == nextPad) fill = RGB(255, 255, 255); /* highlight next */
+        fill_rect(hdc, rc, fill);
+        HPEN pen = CreatePen(PS_SOLID, (i == nextPad) ? 6 : 3, RGB(60,60,60));
+        HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 16, 16);
+        SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
+        draw_text_center(hdc, rc, k_note_names[i], 24, RGB(40,40,40), 1);
+        hit_add(app, rc, (ButtonId)(BTN_PAD_1 + i), k_note_names[i], i, 1);
+    }
+    if (app->actDone) render_activity_done(app, hdc);
+}
+
+
 /* ---------- activity renderer ---------- */
 void app_render(AppState *app, HDC hdc) {
     hits_clear(app);
@@ -799,16 +942,21 @@ void app_render(AppState *app, HDC hdc) {
                     strcmp(id, "LT_D") == 0 || strcmp(id, "LT_E") == 0) {
                     int li = (int)(id[3] - 'A');
                     render_letter_gallery(app, hdc, li >= 0 && li < 5 ? li : 0);
-                } else if (strcmp(id, "LT_FIND") == 0 || strcmp(id, "LT_TRACE") == 0) {
+                } else if (strcmp(id, "LT_FIND") == 0) {
                     render_find_letter(app, hdc);
+                } else if (strcmp(id, "LT_TRACE") == 0) {
+                    render_trace_letter(app, hdc);
                 } else if (strcmp(id, "NM_1") == 0) render_number_show(app, hdc, 1);
                 else if (strcmp(id, "NM_2") == 0) render_number_show(app, hdc, 2);
                 else if (strcmp(id, "NM_3") == 0) render_number_show(app, hdc, 3);
                 else if (strcmp(id, "NM_4") == 0) render_number_show(app, hdc, 4);
                 else if (strcmp(id, "NM_5") == 0) render_number_show(app, hdc, 5);
                 else if (strcmp(id, "NM_COUNT") == 0 || strcmp(id, "NM_MATCH") == 0) render_count_quiz(app, hdc);
-                else if (strcmp(id, "SC_SHAPE") == 0 || strcmp(id, "SC_COLOR") == 0 || strcmp(id, "SC_SORT") == 0) render_shape_match(app, hdc);
-                else if (strcmp(id, "MU_PADS") == 0 || strcmp(id, "MU_SONG1") == 0 || strcmp(id, "MU_SONG2") == 0) render_music_pads(app, hdc);
+                else if (strcmp(id, "SC_SHAPE") == 0) render_shape_match(app, hdc);
+                else if (strcmp(id, "SC_COLOR") == 0) render_color_match(app, hdc);
+                else if (strcmp(id, "SC_SORT") == 0) render_sort_shapes(app, hdc);
+                else if (strcmp(id, "MU_PADS") == 0) render_music_pads(app, hdc);
+                else if (strcmp(id, "MU_SONG1") == 0 || strcmp(id, "MU_SONG2") == 0) render_music_song(app, hdc);
                 else { fill_rect(hdc, (RECT){0, 0, app->width, app->height}, RGB(240, 240, 240)); render_activity_header(app, hdc); draw_button(app, hdc, (RECT){app->width / 2 - 100, 300, app->width / 2 + 100, 360}, BTN_ACTIVITY_ACTION, L"Finish", 1, RGB(200, 255, 200), 1); if (app->actDone) render_activity_done(app, hdc); }
             }
             break;
@@ -895,7 +1043,22 @@ static void handle_activity_action(AppState *app, int param) {
         return;
     }
 
-    if (strcmp(id, "LT_FIND") == 0 || strcmp(id, "LT_TRACE") == 0) {
+    /* Trace letter: tap dots in order (actScore bitmask of dots) */
+    if (strcmp(id, "LT_TRACE") == 0) {
+        int nextDot = __builtin_popcount(app->actScore); /* how many dots tapped */
+        if (param == nextDot + 1) {
+            app->actScore |= (1 << nextDot);
+            play_tone(app, 600.0f + nextDot * 80.0f, 0.1f);
+            if (app->actScore == 0x3F) { app->actScore = 3; finish_activity(app); } /* 6 dots done */
+            else set_status(app, L"Next dot!");
+        } else {
+            play_feedback(app, 0);
+            set_status(app, L"Tap the next dot in order!");
+        }
+        return;
+    }
+
+    if (strcmp(id, "LT_FIND") == 0) {
         if (param == 1) {
             app->actStep++;
             play_tone(app, 700.0f, 0.1f);
@@ -923,20 +1086,57 @@ static void handle_activity_action(AppState *app, int param) {
         return;
     }
 
-    if (strcmp(id, "SC_SHAPE") == 0 || strcmp(id, "SC_COLOR") == 0 || strcmp(id, "SC_SORT") == 0) {
+    /* Color match: param==1 means correct color tapped */
+    if (strcmp(id, "SC_COLOR") == 0) {
         if (param == 1) {
             app->actStep++;
             play_tone(app, 740.0f, 0.1f);
             if (app->actStep >= 3) { app->actScore = 3; finish_activity(app); }
-            else set_status(app, L"Great match!");
+            else set_status(app, L"Great color!");
         } else {
             play_feedback(app, 0);
-            set_status(app, L"Try another one!");
+            set_status(app, L"That's a different color.");
         }
         return;
     }
 
-    if (strcmp(id, "MU_PADS") == 0 || strcmp(id, "MU_SONG1") == 0 || strcmp(id, "MU_SONG2") == 0) {
+    /* Sort shapes: correct param > 0, wrong param < 0 */
+    if (strcmp(id, "SC_SORT") == 0) {
+        if (param > 0) {
+            app->actScore |= (1 << (param - 1));
+            play_tone(app, 740.0f, 0.1f);
+            int tapped = __builtin_popcount(app->actScore);
+            if (tapped >= 3) { app->actScore = 3; finish_activity(app); }
+            else set_status(app, L"Sort the next one!");
+        } else {
+            play_feedback(app, 0);
+            set_status(app, L"Not the right one for this round!");
+        }
+        return;
+    }
+
+    /* Music song: correct pad advances, wrong resets progress */
+    if (strcmp(id, "MU_SONG1") == 0 || strcmp(id, "MU_SONG2") == 0) {
+        const char *id2 = k_activities[app->activeActIdx].id;
+        int seq1[4] = {0,2,4,7};
+        int seq2[5] = {0,1,2,3,4};
+        int *seq = (strcmp(id2, "MU_SONG2") == 0) ? seq2 : seq1;
+        int seqLen = (strcmp(id2, "MU_SONG2") == 0) ? 5 : 4;
+        int expected = seq[app->actStep];
+        if (param == expected) {
+            app->actStep++;
+            play_tone(app, k_note_freqs[param], 0.2f);
+            if (app->actStep >= seqLen) { app->actScore = 3; finish_activity(app); }
+            else set_status(app, L"Great note!");
+        } else {
+            play_feedback(app, 0);
+            set_status(app, L"Listen again - try from the start!");
+            app->actStep = 0;
+        }
+        return;
+    }
+
+    if (strcmp(id, "MU_PADS") == 0) {
         app->actScore = 2;
         finish_activity(app);
         return;

@@ -1123,6 +1123,26 @@ static void handle_activity_action(AppState *app, int param) {
         return;
     }
 
+    /* Shape match: param==1 means correct shape tapped */
+    if (strcmp(id, "SC_SHAPE") == 0) {
+        if (param == 1) {
+            app->actStep++;
+            play_tone(app, 740.0f, 0.1f);
+            if (app->actStep >= 3) { app->actScore = 3; finish_activity(app); }
+            else set_status(app, L"Great match!");
+        } else {
+            play_feedback(app, 0);
+            /* Gentle retry: prefer embedded clip on a look-again miss. */
+            if (!(app->voiceFlags & 1u << 2)) {
+                play_voice_clip(app, VOICE_RES_RETRY, L"Let's look again. Can you find the circle?");
+                app->voiceFlags |= 1u << 2;
+            } else {
+                set_status(app, L"Try another one!");
+            }
+        }
+        return;
+    }
+
     /* Color match: param==1 means correct color tapped */
     if (strcmp(id, "SC_COLOR") == 0) {
         if (param == 1) {

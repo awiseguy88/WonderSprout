@@ -13,8 +13,10 @@ typedef enum {
     SCREEN_SHAPES,
     SCREEN_MUSIC,
     SCREEN_REWARDS,
+    SCREEN_GARDEN,
     SCREEN_SETTINGS,
     SCREEN_ACTIVITY,
+    SCREEN_SESSION_DONE,
     SCREEN_COUNT
 } Screen;
 
@@ -26,6 +28,7 @@ typedef enum {
     BTN_HOME_SHAPES,
     BTN_HOME_MUSIC,
     BTN_HOME_REWARDS,
+    BTN_HOME_GARDEN,
     BTN_HOME_SETTINGS,
     BTN_BACK,
     BTN_MUTE,
@@ -33,9 +36,12 @@ typedef enum {
     BTN_RESET,
     BTN_CONFIRM_YES,
     BTN_CONFIRM_NO,
-    BTN_NEXT_STEP,
-    BTN_PLAY_SONG1,
-    BTN_PLAY_SONG2,
+    BTN_SESSION_START,      /* Continue Adventure */
+    BTN_SESSION_NEXT,       /* next activity in session */
+    BTN_SESSION_AGAIN,      /* play this activity again */
+    BTN_SESSION_DONE,       /* Done for today */
+    BTN_PLANT_SUNFLOWER, BTN_PLANT_TULIP, BTN_PLANT_CARROT, BTN_PLANT_TREE,
+    BTN_SLOT_0, BTN_SLOT_1, BTN_SLOT_2, BTN_SLOT_3, BTN_SLOT_4, BTN_SLOT_5,
     BTN_PAD_1, BTN_PAD_2, BTN_PAD_3, BTN_PAD_4, BTN_PAD_5, BTN_PAD_6, BTN_PAD_7, BTN_PAD_8,
     BTN_ACTIVITY_START,
     BTN_ACTIVITY_ACTION, /* generic tap in activity area */
@@ -50,7 +56,7 @@ typedef struct {
     int enabled;
 } HitRect;
 
-#define MAX_HITS 64
+#define MAX_HITS 96
 
 typedef struct {
     Screen screen;
@@ -63,6 +69,9 @@ typedef struct {
     int actScore;     /* stars/score for current run */
     int actDone;      /* 1 when finished */
     int actStep;      /* internal step within activity */
+
+    /* Learning Path scroll offset */
+    int pathScroll;
 
     /* transient UI */
     int showResetConfirm;

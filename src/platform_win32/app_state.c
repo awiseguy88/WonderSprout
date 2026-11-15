@@ -301,20 +301,27 @@ static void draw_back(AppState *app, HDC hdc) {
 /* ---------- screens: home ---------- */
 static void render_home(AppState *app, HDC hdc) {
     fill_rect(hdc, (RECT){0, 0, app->width, app->height}, BGC_LIGHT);
-    draw_text_center(hdc, (RECT){0, 18, app->width, 86}, L"WonderSprout", 52, RGB(40, 130, 60), 1);
-    draw_text_center(hdc, (RECT){0, 80, app->width, 116}, L"Free learning fun for ages 2-5", 22, RGB(80, 80, 80), 0);
+    draw_text_center(hdc, (RECT){0, 10, app->width, 60}, L"WonderSprout", 44, RGB(40, 130, 60), 1);
+
+    /* Big Continue Adventure button */
+    RECT cont = {app->width/2 - 220, 70, app->width/2 + 220, 140};
+    const wchar_t *contLabel = app->progress.sessionActive ? L"Continue Adventure" : L"Start Adventure!";
+    draw_button(app, hdc, cont, BTN_SESSION_START, contLabel, 0, RGB(120, 220, 120), 1);
+    draw_text_center(hdc, (RECT){0, 142, app->width, 168},
+        L"Play 3 activities, then plant something in your garden!", 18, RGB(80, 80, 80), 0);
 
     int cols = 3, rows = 2;
-    int pad = 24, top = 140;
+    int pad = 20, top = 175;
     int bw = (app->width - pad * (cols + 1)) / cols;
-    int bh = (app->height - top - pad * (rows + 1)) / rows;
+    int bh = (app->height - top - pad * (rows + 1) - 30) / rows;
+    if (bh < 60) bh = 60;
     struct { const wchar_t *label; ButtonId id; COLORREF c; } btns[6] = {
         {L"Learning Path", BTN_HOME_PATH, RGB(255, 220, 120)},
         {L"ABC Letters", BTN_HOME_LETTERS, RGB(180, 220, 255)},
         {L"123 Numbers", BTN_HOME_NUMBERS, RGB(255, 200, 200)},
         {L"Shapes & Colors", BTN_HOME_SHAPES, RGB(200, 255, 200)},
         {L"Music", BTN_HOME_MUSIC, RGB(220, 200, 255)},
-        {L"My Rewards", BTN_HOME_REWARDS, RGB(255, 230, 180)},
+        {L"My Garden", BTN_HOME_GARDEN, RGB(200, 255, 200)},
     };
     for (int i = 0; i < 6; i++) {
         int r = i / cols, c = i % cols;
@@ -322,9 +329,9 @@ static void render_home(AppState *app, HDC hdc) {
                    pad + c * (bw + pad) + bw, top + pad + r * (bh + pad) + bh};
         draw_button(app, hdc, rc, btns[i].id, btns[i].label, 0, btns[i].c, 1);
     }
-    RECT s = {app->width - 150, 14, app->width - 14, 62};
-    draw_button(app, hdc, s, BTN_HOME_SETTINGS, L"\u2699 Settings", 0, RGB(230, 230, 235), 1);
-    draw_text_center(hdc, (RECT){0, app->height - 34, app->width, app->height - 6}, app->statusMsg, 18, RGB(60, 60, 60), 0);
+    RECT s = {app->width - 150, 14, app->width - 14, 54};
+    draw_button(app, hdc, s, BTN_HOME_SETTINGS, L"Settings", 0, RGB(230, 230, 235), 1);
+    draw_text_center(hdc, (RECT){0, app->height - 28, app->width, app->height - 4}, app->statusMsg, 16, RGB(60, 60, 60), 0);
 }
 
 /* ---------- screens: learning path ---------- */
@@ -333,8 +340,16 @@ static void render_path(AppState *app, HDC hdc) {
     draw_back(app, hdc);
     draw_text_center(hdc, (RECT){140, 10, app->width - 10, 60}, L"Learning Path", 36, RGB(80, 60, 20), 1);
 
-    int y = 80, rowH = 52;
-    for (int i = 0; i < (int)k_pathLen; i++) {
+    int rowH = 52;
+    int visible = (app->height - 90) / rowH;
+    if (visible < 1) visible = 1;
+    int maxScroll = (int)k_pathLen - visible;
+    if (maxScroll < 0) maxScroll = 0;
+    if (app->pathScroll < 0) app->pathScroll = 0;
+    if (app->pathScroll > maxScroll) app->pathScroll = maxScroll;
+
+    int y = 80;
+    for (int i = app->pathScroll; i < (int)k_pathLen; i++) {
         int idx = activity_index_of(k_learningPath[i]);
         if (idx < 0) continue;
         int unlocked = progress_is_unlocked(&app->progress, idx);
@@ -356,8 +371,13 @@ static void render_path(AppState *app, HDC hdc) {
             draw_button(app, hdc, play, BTN_NONE, L"Locked", 0, RGB(200, 200, 200), 0);
         }
         y += rowH;
-        if (y > app->height - 60) break;
+        if (y > app->height - 30) break;
     }
+    /* simple scroll hints */
+    if (app->pathScroll > 0)
+        draw_text_center(hdc, (RECT){app->width/2 - 40, 60, app->width/2 + 40, 78}, L"^ more", 14, RGB(100,100,100), 0);
+    if (app->pathScroll < maxScroll)
+        draw_text_center(hdc, (RECT){app->width/2 - 40, app->height - 26, app->width/2 + 40, app->height - 6}, L"v more", 14, RGB(100,100,100), 0);
 }
 
 /* ---------- screens: activity lists ---------- */
@@ -384,31 +404,97 @@ static void render_activity_list(AppState *app, HDC hdc, Domain dom, const wchar
 }
 
 /* ---------- screens: rewards ---------- */
-static void render_rewards(AppState *app, HDC hdc) {
-    fill_rect(hdc, (RECT){0, 0, app->width, app->height}, RGB(255, 248, 220));
+static void render_garden(AppState *app, HDC hdc) {
+    /* sky + ground */
+    fill_rect(hdc, (RECT){0, 0, app->width, app->height/2}, RGB(180, 220, 255));
+    fill_rect(hdc, (RECT){0, app->height/2, app->width, app->height}, RGB(140, 200, 120));
     draw_back(app, hdc);
-    draw_text_center(hdc, (RECT){140, 10, app->width - 10, 60}, L"My Rewards", 36, RGB(80, 60, 20), 1);
-    wchar_t buf[128];
-    swprintf(buf, 128, L"Stars: %d   Stickers: %d", progress_star_total(&app->progress), progress_sticker_count(&app->progress));
-    draw_text_center(hdc, (RECT){0, 72, app->width, 116}, buf, 28, RGB(40, 110, 40), 1);
+    draw_text_center(hdc, (RECT){140, 10, app->width - 10, 60}, L"My Garden", 36, RGB(40, 90, 40), 1);
 
-    int x = 60, y = 140, size = 100, gap = 24, col = 0;
-    for (int i = 0; i < STICKER_COUNT; i++) {
-        RECT rc = {x, y, x + size, y + size};
-        COLORREF c = app->progress.stickers[i] ? RGB(255, 215, 0) : RGB(220, 220, 220);
-        fill_rect(hdc, rc, c);
-        HPEN pen = CreatePen(PS_SOLID, 3, RGB(80, 80, 80));
-        HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        Ellipse(hdc, rc.left + 8, rc.top + 8, rc.right - 8, rc.bottom - 8);
-        SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
-        wchar_t lab[8]; swprintf(lab, 8, L"%d", i + 1);
-        draw_text_center(hdc, rc, lab, 26, RGB(40, 40, 40), 1);
-        if (app->progress.stickers[i]) {
-            /* star mark */
-            draw_text_center(hdc, (RECT){rc.left, rc.top + size - 30, rc.right, rc.bottom}, L"\u2605", 24, RGB(200, 160, 0), 1);
+    wchar_t info[128];
+    swprintf(info, 128, L"Sessions: %d   Seeds ready: %d   Plants: %d",
+        app->progress.sessionCount, app->progress.seedsAvailable, progress_garden_count(&app->progress));
+    draw_text_center(hdc, (RECT){140, 58, app->width - 10, 86}, info, 18, RGB(40, 60, 40), 0);
+
+    /* 6 garden slots */
+    int slotW = 120, slotH = 160, gap = 20;
+    int totalW = GARDEN_SLOTS * slotW + (GARDEN_SLOTS - 1) * gap;
+    int startX = (app->width - totalW) / 2;
+    int groundY = app->height / 2 + 20;
+    for (int i = 0; i < GARDEN_SLOTS; i++) {
+        int x = startX + i * (slotW + gap);
+        RECT slot = {x, groundY, x + slotW, groundY + slotH};
+        /* soil */
+        fill_rect(hdc, (RECT){x+10, groundY + slotH - 40, x + slotW - 10, groundY + slotH}, RGB(120, 80, 50));
+        GardenPlant *gp = &app->progress.garden[i];
+        if (gp->plantType != PLANT_NONE) {
+            /* draw plant by stage */
+            int cx = x + slotW/2;
+            int baseY = groundY + slotH - 40;
+            COLORREF plantColor = RGB(60, 160, 60);
+            if (gp->plantType == PLANT_SUNFLOWER) plantColor = RGB(255, 200, 0);
+            else if (gp->plantType == PLANT_TULIP) plantColor = RGB(255, 100, 150);
+            else if (gp->plantType == PLANT_CARROT) plantColor = RGB(255, 140, 0);
+            else if (gp->plantType == PLANT_TREE) plantColor = RGB(60, 140, 60);
+
+            if (gp->stage >= 1) { /* sprout stem */
+                HPEN pen = CreatePen(PS_SOLID, 4, RGB(60, 140, 60));
+                HGDIOBJ op = SelectObject(hdc, pen);
+                MoveToEx(hdc, cx, baseY, NULL);
+                LineTo(hdc, cx, baseY - 30 - gp->stage * 15);
+                SelectObject(hdc, op); DeleteObject(pen);
+            }
+            if (gp->stage >= 2) { /* leaves */
+                HBRUSH lb = CreateSolidBrush(RGB(80, 180, 80));
+                HGDIOBJ ob = SelectObject(hdc, lb);
+                Ellipse(hdc, cx - 25, baseY - 50 - gp->stage*10, cx - 5, baseY - 30 - gp->stage*10);
+                Ellipse(hdc, cx + 5, baseY - 45 - gp->stage*10, cx + 25, baseY - 25 - gp->stage*10);
+                SelectObject(hdc, ob); DeleteObject(lb);
+            }
+            if (gp->stage >= 3) { /* bloom */
+                HBRUSH fb = CreateSolidBrush(plantColor);
+                HGDIOBJ ob = SelectObject(hdc, fb);
+                int topY = baseY - 30 - gp->stage * 15;
+                Ellipse(hdc, cx - 18, topY - 18, cx + 18, topY + 18);
+                SelectObject(hdc, ob); DeleteObject(fb);
+            }
+            if (gp->stage == 0) { /* seed dot */
+                HBRUSH sb = CreateSolidBrush(RGB(100, 70, 40));
+                HGDIOBJ ob = SelectObject(hdc, sb);
+                Ellipse(hdc, cx - 8, baseY - 12, cx + 8, baseY + 4);
+                SelectObject(hdc, ob); DeleteObject(sb);
+            }
+            /* label */
+            const wchar_t *name = plant_name(gp->plantType);
+            draw_text_center(hdc, (RECT){x, slot.top - 30, x + slotW, slot.top}, name, 14, RGB(30,60,30), 0);
+        } else {
+            /* empty slot - plantable if seeds available */
+            if (app->progress.seedsAvailable > 0) {
+                draw_button(app, hdc, (RECT){x + 10, groundY + 20, x + slotW - 10, groundY + 70},
+                    (ButtonId)(BTN_SLOT_0 + i), L"Plant", i, RGB(200, 240, 200), 1);
+            } else {
+                draw_text_center(hdc, (RECT){x, groundY + 30, x + slotW, groundY + 70}, L"Empty", 16, RGB(80,80,80), 0);
+            }
         }
-        x += size + gap; col++;
-        if (col >= 5) { col = 0; x = 60; y += size + gap; }
+    }
+
+    /* plant type picker if seeds available */
+    if (app->progress.seedsAvailable > 0) {
+        draw_text_center(hdc, (RECT){0, app->height - 70, app->width, app->height - 45},
+            L"Pick a plant, then tap an empty slot:", 18, RGB(30,60,30), 0);
+        int bw = 130, gap2 = 12;
+        int total = 4*bw + 3*gap2;
+        int sx = (app->width - total) / 2;
+        const wchar_t *names[4] = {L"Sunflower", L"Tulip", L"Carrot", L"Tree"};
+        ButtonId ids[4] = {BTN_PLANT_SUNFLOWER, BTN_PLANT_TULIP, BTN_PLANT_CARROT, BTN_PLANT_TREE};
+        COLORREF cols[4] = {RGB(255,220,100), RGB(255,180,200), RGB(255,180,100), RGB(180,230,180)};
+        for (int i = 0; i < 4; i++) {
+            draw_button(app, hdc, (RECT){sx + i*(bw+gap2), app->height - 40, sx + i*(bw+gap2) + bw, app->height - 6},
+                ids[i], names[i], PLANT_SUNFLOWER + i, cols[i], 1);
+        }
+    } else {
+        draw_text_center(hdc, (RECT){0, app->height - 40, app->width, app->height - 10},
+            L"Complete a play session to earn a seed!", 16, RGB(40,70,40), 0);
     }
 }
 
@@ -702,7 +788,8 @@ void app_render(AppState *app, HDC hdc) {
         case SCREEN_NUMBERS: render_activity_list(app, hdc, DOMAIN_NUMBERS, L"Numbers", BGC_NUMBERS); break;
         case SCREEN_SHAPES:  render_activity_list(app, hdc, DOMAIN_SHAPES_COLORS, L"Shapes & Colors", BGC_SHAPES); break;
         case SCREEN_MUSIC:   render_activity_list(app, hdc, DOMAIN_MUSIC, L"Music", BGC_MUSIC); break;
-        case SCREEN_REWARDS: render_rewards(app, hdc); break;
+        case SCREEN_REWARDS:
+        case SCREEN_GARDEN: render_garden(app, hdc); break;
         case SCREEN_SETTINGS:render_settings(app, hdc); break;
         case SCREEN_ACTIVITY:
             if (app->activeActIdx < 0) { render_home(app, hdc); break; }
@@ -749,14 +836,31 @@ static void render_activity_header(AppState *app, HDC hdc) {
 }
 
 static void render_activity_done(AppState *app, HDC hdc) {
-    RECT box = {app->width / 2 - 220, app->height / 2 - 110, app->width / 2 + 220, app->height / 2 + 130};
+    int boxW = 460, boxH = 240;
+    RECT box = {app->width / 2 - boxW/2, app->height / 2 - boxH/2, app->width / 2 + boxW/2, app->height / 2 + boxH/2};
     fill_rect(hdc, box, RGB(255, 245, 180));
     HPEN pen = CreatePen(PS_SOLID, 4, RGB(200, 160, 0));
     HGDIOBJ op = SelectObject(hdc, pen); HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
     RoundRect(hdc, box.left, box.top, box.right, box.bottom, 24, 24);
     SelectObject(hdc, op); SelectObject(hdc, ob); DeleteObject(pen);
-    draw_text_center(hdc, (RECT){box.left, box.top + 14, box.right, box.top + 64}, L"Great job! Star earned!", 26, RGB(40, 130, 40), 1);
-    draw_button(app, hdc, (RECT){box.left + 30, box.top + 86, box.right - 30, box.top + 146}, BTN_BACK, L"Back", 0, RGB(180, 240, 180), 1);
+    draw_text_center(hdc, (RECT){box.left, box.top + 12, box.right, box.top + 60}, L"Great job! Star earned!", 24, RGB(40, 130, 40), 1);
+    wchar_t info[96];
+    if (app->progress.sessionActive) {
+        swprintf(info, 96, L"Session: %d of %d activities", app->progress.sessionDone, SESSION_GOAL);
+        draw_text_center(hdc, (RECT){box.left, box.top + 58, box.right, box.top + 86}, info, 16, RGB(80, 80, 80), 0);
+    }
+    int by = box.top + 100;
+    if (progress_session_ready(&app->progress)) {
+        draw_text_center(hdc, (RECT){box.left, box.top + 60, box.right, box.top + 90}, L"Session complete! Plant a seed in your garden!", 17, RGB(200, 100, 0), 1);
+        draw_button(app, hdc, (RECT){box.left + 80, by, box.right - 80, by + 44}, BTN_SESSION_DONE, L"Go to Garden", 0, RGB(255, 230, 120), 1);
+    } else if (app->progress.sessionActive) {
+        draw_button(app, hdc, (RECT){box.left + 20, by, box.left + 150, by + 44}, BTN_SESSION_NEXT, L"Next", 0, RGB(160, 230, 160), 1);
+        draw_button(app, hdc, (RECT){box.left + 165, by, box.left + 310, by + 44}, BTN_SESSION_AGAIN, L"Play Again", 0, RGB(255, 220, 160), 1);
+        draw_button(app, hdc, (RECT){box.left + 325, by, box.right - 20, by + 44}, BTN_SESSION_DONE, L"Done", 0, RGB(200, 220, 255), 1);
+    } else {
+        draw_button(app, hdc, (RECT){box.left + 20, by, box.left + 200, by + 44}, BTN_SESSION_AGAIN, L"Play Again", 0, RGB(255, 220, 160), 1);
+        draw_button(app, hdc, (RECT){box.left + 220, by, box.right - 20, by + 44}, BTN_SESSION_DONE, L"Done", 0, RGB(200, 255, 200), 1);
+    }
 }
 
 /* ---------- click handling ---------- */
@@ -848,13 +952,88 @@ int app_click(AppState *app, int x, int y) {
     if (id == BTN_NONE) return 0;
 
     switch (id) {
-        case BTN_HOME_PATH: app->screen = SCREEN_PATH; set_status(app, L"Follow the path!"); return 1;
+        case BTN_HOME_PATH: app->screen = SCREEN_PATH; app->pathScroll = 0; set_status(app, L"Follow the path!"); return 1;
         case BTN_HOME_LETTERS: app->screen = SCREEN_LETTERS; return 1;
         case BTN_HOME_NUMBERS: app->screen = SCREEN_NUMBERS; return 1;
         case BTN_HOME_SHAPES:  app->screen = SCREEN_SHAPES; return 1;
         case BTN_HOME_MUSIC:   app->screen = SCREEN_MUSIC; return 1;
-        case BTN_HOME_REWARDS: app->screen = SCREEN_REWARDS; return 1;
+        case BTN_HOME_REWARDS:
+        case BTN_HOME_GARDEN:  app->screen = SCREEN_GARDEN; return 1;
         case BTN_HOME_SETTINGS: app->screen = SCREEN_SETTINGS; app->showResetConfirm = 0; return 1;
+
+        case BTN_SESSION_START:
+            if (!app->progress.sessionActive) {
+                progress_start_session(&app->progress);
+                save(app);
+                speak(app, L"Time to play three games! Let's go!");
+            }
+            /* jump to the next unlocked path step */
+            {
+                int next = progress_next_path_step(&app->progress);
+                if (next >= 0 && progress_is_unlocked(&app->progress, next)) {
+                    start_activity(app, next);
+                } else {
+                    app->screen = SCREEN_PATH;
+                }
+            }
+            return 1;
+
+        case BTN_SESSION_NEXT:
+            if (app->activeActIdx >= 0) {
+                int next = progress_next_path_step(&app->progress);
+                if (next >= 0 && progress_is_unlocked(&app->progress, next)) {
+                    start_activity(app, next);
+                } else {
+                    app->activeActIdx = -1;
+                    app->screen = SCREEN_HOME;
+                }
+            }
+            return 1;
+
+        case BTN_SESSION_AGAIN:
+            if (app->activeActIdx >= 0) {
+                start_activity(app, app->activeActIdx);
+            }
+            return 1;
+
+        case BTN_SESSION_DONE:
+            app->activeActIdx = -1;
+            if (progress_session_ready(&app->progress)) {
+                progress_finish_session(&app->progress);
+                save(app);
+                app->screen = SCREEN_GARDEN;
+                speak(app, L"Your garden grew! Plant your seed!");
+            } else if (app->progress.sessionActive) {
+                /* save partial session progress; come back later */
+                save(app);
+                app->screen = SCREEN_HOME;
+                set_status(app, L"Come back tomorrow to finish your garden!");
+            } else {
+                app->screen = SCREEN_HOME;
+            }
+            return 1;
+
+        case BTN_PLANT_SUNFLOWER: case BTN_PLANT_TULIP: case BTN_PLANT_CARROT: case BTN_PLANT_TREE: {
+            /* store chosen plant type in actStep for slot planting */
+            app->actStep = (int)id - (int)BTN_PLANT_SUNFLOWER + PLANT_SUNFLOWER;
+            set_status(app, L"Now tap an empty slot to plant!");
+            return 1;
+        }
+
+        case BTN_SLOT_0: case BTN_SLOT_1: case BTN_SLOT_2:
+        case BTN_SLOT_3: case BTN_SLOT_4: case BTN_SLOT_5: {
+            int slot = (int)id - (int)BTN_SLOT_0;
+            int plantType = (app->actStep >= PLANT_SUNFLOWER && app->actStep <= PLANT_TREE) ? app->actStep : PLANT_SUNFLOWER;
+            if (progress_plant_seed(&app->progress, slot, plantType)) {
+                save(app);
+                set_status(app, L"Planted! Come back tomorrow to watch it grow!");
+                speak(app, plant_cue(plantType));
+                app->actStep = 0;
+            } else {
+                set_status(app, L"That slot is already taken.");
+            }
+            return 1;
+        }
 
         case BTN_BACK:
             if (app->screen == SCREEN_ACTIVITY) { app->activeActIdx = -1; app->screen = SCREEN_HOME; }

@@ -13,12 +13,14 @@
 #include <wchar.h>
 #include <math.h>
 #include <time.h>
+#include <mmsystem.h>
 
 #include "app_state.h"
 #include "audio_winmm.h"
 #include "tts_sapi.h"
 #include "core/storage.h"
 #include "core/audio_synth.h"
+#include "voice_res.h"
 
 /* ---------- constants ---------- */
 #define MAX_PARTICLES 40
@@ -218,7 +220,12 @@ void app_init(AppState *app) {
     tts_init();
     srand((unsigned int)time(NULL));
     set_status(app, L"Welcome to WonderSprout! Tap a big button to play.");
-    speak(app, L"Welcome to Wonder Sprout! Tap a big button to start learning.");
+    /* Prefer embedded voice clip; fall back to SAPI if resource playback fails. */
+    if (!app->progress.muted &&
+        !PlaySoundW(MAKEINTRESOURCEW(VOICE_RES_WELCOME), GetModuleHandleW(NULL),
+                    SND_RESOURCE | SND_ASYNC | SND_NODEFAULT)) {
+        speak(app, L"Hi, I'm Sprout. Want to play?");
+    }
 }
 
 void app_shutdown(AppState *app) {

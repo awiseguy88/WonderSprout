@@ -228,6 +228,166 @@ static int test_audio_synth(void) {
     return 1;
 }
 
+/* ---------- Garden / session tests ---------- */
+
+static int test_progress_session(void) {
+    Progress p; progress_init(&p);
+    ASSERT(p.sessionActive == 0);
+    ASSERT(p.sessionDone == 0);
+    ASSERT(progress_session_ready(&p) == 0);
+
+    progress_start_session(&p);
+    ASSERT(p.sessionActive == 1);
+    ASSERT(p.sessionDone == 0);
+
+    /* Complete SESSION_GOAL activities -> session ready */
+    int first = activity_index_of(k_learningPath[0]);
+    progress_complete(&p, first, 3);
+    ASSERT(p.sessionDone == 1);
+    ASSERT(progress_session_ready(&p) == 0);
+
+    int second = activity_index_of(k_learningPath[1]);
+    progress_complete(&p, second, 2);
+    ASSERT(p.sessionDone == 2);
+    ASSERT(progress_session_ready(&p) == 0);
+
+    int third = activity_index_of(k_learningPath[2]);
+    progress_complete(&p, third, 1);
+    ASSERT(p.sessionDone == 3);
+    ASSERT(progress_session_ready(&p) == 1);
+
+    return 1;
+}
+
+static int test_progress_finish_session(void) {
+    Progress p; progress_init(&p);
+
+    /* Plant a seed, then finish a session -> it should advance one stage. */
+    p.seedsAvailable = 1;
+    ASSERT(progress_plant_seed(&p, 0, PLANT_SUNFLOWER) == 1);
+    ASSERT(p.garden[0].plantType == PLANT_SUNFLOWER);
+    ASSERT(p.garden[0].stage == 0);
+    ASSERT(progress_garden_count(&p) == 1);
+    ASSERT(progress_garden_empty_slots(&p) == GARDEN_SLOTS - 1);
+
+    /* Start + finish a session -> plant advances to stage 1, seed granted. */
+    progress_start_session(&p);
+    int a = activity_index_of(k_learningPath[0]);
+    progress_complete(&p, a, 3); /* sessionDone=1 */
+    int b = activity_index_of(k_learningPath[1]);
+    progress_complete(&p, b, 3); /* sessionDone=2 */
+    int c = activity_index_of(k_learningPath[2]);
+    progress_complete(&p, c, 3); /* sessionDone=3 -> ready */
+    ASSERT(progress_session_ready(&p) == 1);
+
+    int sessionsBefore = p.sessionCount;
+    int seedsBefore = p.seedsAvailable;
+    progress_finish_session(&p);
+    ASSERT(p.sessionCount == sessionsBefore + 1);
+    ASSERT(p.seedsAvailable == seedsBefore + 1);
+    ASSERT(p.sessionActive == 0);
+    ASSERT(p.sessionDone == 0);
+    ASSERT(p.garden[0].stage == 1); /* advanced one stage */
+
+    return 1;
+}
+
+static int test_progress_plant_seed(void) {
+    Progress p; progress_init(&p);
+    ASSERT(progress_garden_count(&p) == 0);
+    ASSERT(progress_garden_empty_slots(&p) == GARDEN_SLOTS);
+    ASSERT(progress_garden_empty(&p) == 1);
+
+    /* No seeds -> cannot plant */
+    ASSERT(progress_plant_seed(&p, 0, PLANT_TULIP) == 0);
+    ASSERT(progress_garden_count(&p) == 0);
+
+    /* Grant a seed -> plant succeeds */
+    p.seedsAvailable = 1;
+    ASSERT(progress_plant_seed(&p, 2, PLANT_CARROT) == 1);
+    ASSERT(p.garden[2].plantType == PLANT_CARROT);
+    ASSERT(p.garden[2].stage == 0);
+    ASSERT(p.seedsAvailable == 0);
+    ASSERT(progress_garden_count(&p) == 1);
+    ASSERT(progress_garden_empty_slots(&p) == GARDEN_SLOTS - 1);
+    ASSERT(progress_garden_empty(&p) == 0);
+
+    /* Slot already occupied */
+    p.seedsAvailable = 1;
+    ASSERT(progress_plant_seed(&p, 2, PLANT_TULIP) == 0);
+    /* Invalid slot */
+    ASSERT(progress_plant_seed(&p, -1, PLANT_TULIP) == 0);
+    ASSERT(progress_plant_seed(&p, GARDEN_SLOTS, PLANT_TULIP) == 0);
+    /* Invalid plant type */
+    ASSERT(progress_plant_seed(&p, 0, 99) == 0);
+
+    return 1;
+}
+
+static int test_storage_garden_roundtrip(void) {
+    const char *path = "/tmp/wondersprout_test_garden.dat";
+    Progress p; progress_init(&p);
+    p.seedsAvailable = 2;
+    ASSERT(progress_plant_seed(&p, 0, PLANT_SUNFLOWER) == 1);
+    ASSERT(progress_plant_seed(&p, 3, PLANT_TULIP) == 1);
+    p.garden[0].stage = 2;
+    p.sessionCount = 5;
+    ASSERT(storage_save(path, &p) == 0);
+
+    Progress q; progress_init(&q);
+    ASSERT(storage_load(path, &q) == 0);
+    ASSERT(q.sessionCount == 5);
+    ASSERT(q.garden[0].plantType == PLANT_SUNFLOWER);
+    ASSERT(q.garden[0].stage == 2);
+    ASSERT(q.garden[3].plantType == PLANT_TULIP);
+    ASSERT(q.seedsAvailable == 0); /* 2 planted, 2 granted */
+    ASSERT(progress_garden_count(&q) == 2);
+
+    remove(path);
+    return 1;
+}
+
+static int test_storage_v1_migration(void) {
+    /* Simulate a v1 save (no garden/session fields) and verify it loads
+       with defaults for the new fields. */
+    const char *path = "/tmp/wondersprout_test_v1.dat";
+    Progress p; progress_init(&p);
+    int a = activity_index_of(k_learningPath[0]);
+    progress_complete(&p, a, 2);
+    p.muted = 1;
+
+    /* Write a v1-format file manually (magic + version=1 + old fields). */
+    FILE *f = fopen(path, "wb");
+    ASSERT(f != NULL);
+    const char *magic = "WSV1";
+    int v1 = 1;
+    fwrite(magic, 1, 4, f);
+    fwrite(&v1, sizeof(v1), 1, f);
+    fwrite(p.completed, sizeof(p.completed[0]), ACTIVITY_COUNT, f);
+    fwrite(p.stars, sizeof(p.stars[0]), ACTIVITY_COUNT, f);
+    fwrite(&p.pathIndex, sizeof(p.pathIndex), 1, f);
+    fwrite(p.stickers, sizeof(p.stickers[0]), STICKER_COUNT, f);
+    fwrite(&p.muted, sizeof(p.muted), 1, f);
+    fwrite(&p.reduceMotion, sizeof(p.reduceMotion), 1, f);
+    fclose(f);
+
+    Progress q; progress_init(&q);
+    ASSERT(storage_load(path, &q) == 0);
+    ASSERT(q.version == PROGRESS_VERSION);
+    ASSERT(q.completed[a] == 1);
+    ASSERT(q.pathIndex == p.pathIndex);
+    ASSERT(q.muted == 1);
+    /* New fields default */
+    ASSERT(q.sessionCount == 0);
+    ASSERT(q.sessionActive == 0);
+    ASSERT(q.sessionDone == 0);
+    ASSERT(q.seedsAvailable == 0);
+    ASSERT(progress_garden_count(&q) == 0);
+
+    remove(path);
+    return 1;
+}
+
 int main(void) {
     printf("WonderSprout core tests\n");
     TEST(curriculum_unique_ids);
@@ -238,9 +398,14 @@ int main(void) {
     TEST(progress_replay_no_regress);
     TEST(progress_stickers);
     TEST(progress_path_complete);
+    TEST(progress_session);
+    TEST(progress_finish_session);
+    TEST(progress_plant_seed);
     TEST(storage_roundtrip);
     TEST(storage_missing);
     TEST(storage_reset_persists);
+    TEST(storage_garden_roundtrip);
+    TEST(storage_v1_migration);
     TEST(audio_synth);
 
     printf("\n%d/%d tests passed\n", tests_run - tests_failed, tests_run);

@@ -42,32 +42,63 @@ static int replace_file(const char *tmp, const char *path) {
 #endif
 }
 
+/* Read the v1 payload (pre-garden fields) into *out, leaving garden/session
+   at defaults. Caller must have already read magic + version (v1) and have
+   called progress_init(out). Returns 0 on success. */
+static int read_v1_payload(FILE *f, Progress *out) {
+    int good = 1;
+    good &= (fread(out->completed, sizeof(out->completed[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT);
+    good &= (fread(out->stars, sizeof(out->stars[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT);
+    good &= (fread(&out->pathIndex, sizeof(out->pathIndex), 1, f) == 1);
+    good &= (fread(out->stickers, sizeof(out->stickers[0]), STICKER_COUNT, f) == STICKER_COUNT);
+    good &= (fread(&out->muted, sizeof(out->muted), 1, f) == 1);
+    good &= (fread(&out->reduceMotion, sizeof(out->reduceMotion), 1, f) == 1);
+    return good ? 0 : -1;
+}
+
+/* Read the v2 payload (v1 fields + garden/session) into *out.
+   Caller must have already read magic + version (v2) and have
+   called progress_init(out). Returns 0 on success. */
+static int read_v2_payload(FILE *f, Progress *out) {
+    if (read_v1_payload(f, out) != 0) return -1;
+    int good = 1;
+    good &= (fread(out->garden, sizeof(out->garden[0]), GARDEN_SLOTS, f) == GARDEN_SLOTS);
+    good &= (fread(&out->sessionCount, sizeof(out->sessionCount), 1, f) == 1);
+    good &= (fread(&out->sessionActive, sizeof(out->sessionActive), 1, f) == 1);
+    good &= (fread(&out->sessionDone, sizeof(out->sessionDone), 1, f) == 1);
+    good &= (fread(&out->seedsAvailable, sizeof(out->seedsAvailable), 1, f) == 1);
+    return good ? 0 : -1;
+}
+
 int storage_load(const char *path, Progress *out) {
     if (!path || !out) return -1;
     FILE *f = fopen(path, "rb");
     if (!f) { progress_init(out); return -1; }
 
-    int ok = 0;
+    int ok = -1;
     char magic[5] = {0};
     int version = 0;
 
     if (fread(magic, 1, 4, f) == 4 && memcmp(magic, STORAGE_MAGIC, 4) == 0 &&
-        fread(&version, sizeof(version), 1, f) == 1 && version == PROGRESS_VERSION) {
+        fread(&version, sizeof(version), 1, f) == 1) {
 
         Progress p;
         progress_init(&p);
-        p.version = version;
+        p.version = PROGRESS_VERSION;
 
-        int good = 1;
-        good &= (fread(p.completed, sizeof(p.completed[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT);
-        good &= (fread(p.stars, sizeof(p.stars[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT);
-        good &= (fread(&p.pathIndex, sizeof(p.pathIndex), 1, f) == 1);
-        good &= (fread(p.stickers, sizeof(p.stickers[0]), STICKER_COUNT, f) == STICKER_COUNT);
-        good &= (fread(&p.muted, sizeof(p.muted), 1, f) == 1);
-        good &= (fread(&p.reduceMotion, sizeof(p.reduceMotion), 1, f) == 1);
-
-        if (good) { *out = p; ok = 0; }
-        else { progress_init(out); ok = -1; }
+        if (version == PROGRESS_VERSION) {
+            /* Current (v2) format */
+            if (read_v2_payload(f, &p) == 0) { *out = p; ok = 0; }
+            else { progress_init(out); ok = -1; }
+        } else if (version == 1) {
+            /* v1 migration: load old fields, keep garden/session at defaults */
+            if (read_v1_payload(f, &p) == 0) { *out = p; ok = 0; }
+            else { progress_init(out); ok = -1; }
+        } else {
+            /* Unknown version */
+            progress_init(out);
+            ok = -1;
+        }
     } else {
         progress_init(out);
         ok = -1;
@@ -89,15 +120,22 @@ int storage_save(const char *path, const Progress *p) {
 
     int ok = 0;
     const char *magic = STORAGE_MAGIC;
+    int version = PROGRESS_VERSION;
 
     if (fwrite(magic, 1, 4, f) == 4 &&
-        fwrite(&p->version, sizeof(p->version), 1, f) == 1 &&
+        fwrite(&version, sizeof(version), 1, f) == 1 &&
         fwrite(p->completed, sizeof(p->completed[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT &&
         fwrite(p->stars, sizeof(p->stars[0]), ACTIVITY_COUNT, f) == ACTIVITY_COUNT &&
         fwrite(&p->pathIndex, sizeof(p->pathIndex), 1, f) == 1 &&
         fwrite(p->stickers, sizeof(p->stickers[0]), STICKER_COUNT, f) == STICKER_COUNT &&
         fwrite(&p->muted, sizeof(p->muted), 1, f) == 1 &&
-        fwrite(&p->reduceMotion, sizeof(p->reduceMotion), 1, f) == 1) {
+        fwrite(&p->reduceMotion, sizeof(p->reduceMotion), 1, f) == 1 &&
+        /* v2 garden/session fields */
+        fwrite(p->garden, sizeof(p->garden[0]), GARDEN_SLOTS, f) == GARDEN_SLOTS &&
+        fwrite(&p->sessionCount, sizeof(p->sessionCount), 1, f) == 1 &&
+        fwrite(&p->sessionActive, sizeof(p->sessionActive), 1, f) == 1 &&
+        fwrite(&p->sessionDone, sizeof(p->sessionDone), 1, f) == 1 &&
+        fwrite(&p->seedsAvailable, sizeof(p->seedsAvailable), 1, f) == 1) {
         ok = 0;
     } else {
         ok = -1;

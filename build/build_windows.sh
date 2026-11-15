@@ -21,6 +21,7 @@ SRC_WIN=(
   "$ROOT/src/platform_win32/main.c"
   "$ROOT/src/platform_win32/app_state.c"
   "$ROOT/src/platform_win32/audio_winmm.c"
+  "$ROOT/src/platform_win32/tts_sapi.c"
 )
 
 CFLAGS=(
@@ -31,7 +32,7 @@ CFLAGS=(
 )
 LDFLAGS=(
   -static -static-libgcc
-  -luser32 -lgdi32 -lwinmm -lshell32 -lole32 -luuid -lkernel32 -lm
+  -luser32 -lgdi32 -lwinmm -lshell32 -lole32 -luuid -lkernel32 -lsapi -lm
 )
 
 echo "==> Building WonderSprout (Windows x64) with $CC"
